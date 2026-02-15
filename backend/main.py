@@ -21,30 +21,20 @@ import sys
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
-# Global database connection
-db_conn = None
+# Configure logging
+logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+logger = logging.getLogger(__name__)
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup: Create in-memory DB and seed it
-    global db_conn
+def get_db_connection():
     try:
-        logger.info("Starting up: Creating in-memory database...")
-        db_conn = sqlite3.connect(":memory:", check_same_thread=False)
-        seed_database(db_conn)
-        logger.info("Database seeded successfully.")
+        conn = sqlite3.connect(":memory:", check_same_thread=False)
+        seed_database(conn)
+        return conn
     except Exception as e:
-        logger.error(f"Failed to seed database: {e}")
-        # We don't crash here so the health check can still pass for debugging
-    
-    yield
-    
-    # Shutdown
-    if db_conn:
-        db_conn.close()
-        logger.info("Database connection closed.")
+        logger.error(f"Failed to create DB connection: {e}")
+        return None
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
@@ -54,12 +44,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-if not OPENROUTER_API_KEY:
-    logger.warning("OPENROUTER_API_KEY is not set!")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GROQ_API_KEY:
+    logger.warning("GROQ_API_KEY is not set!")
 
-OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "z-ai/glm-4.5-air:free")
+GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+MODEL_NAME = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
 
 class ChatRequest(BaseModel):
     message: str
@@ -72,7 +62,11 @@ class ChatResponse(BaseModel):
     visualization_type: Optional[str] = None
 
 def get_db_schema():
-    cursor = db_conn.cursor()
+    conn = get_db_connection()
+    if not conn:
+        return "Error connecting to database."
+        
+    cursor = conn.cursor()
     
     schema = ""
     tables = ["customers", "products", "orders", "order_items"]
@@ -82,15 +76,20 @@ def get_db_schema():
         columns = cursor.fetchall()
         column_names = [col[1] for col in columns]
         schema += f"Table: {table}\nColumns: {', '.join(column_names)}\n\n"
-        
+    
+    conn.close()
     return schema
 
 
 from datetime import datetime
 
 def execute_sql(sql_query):
+    conn = get_db_connection()
+    if not conn:
+        return "Error connecting to database.", []
+
     try:
-        cursor = db_conn.cursor()
+        cursor = conn.cursor()
         cursor.execute(sql_query)
         columns = [description[0] for description in cursor.description]
         data = cursor.fetchall()
@@ -100,8 +99,11 @@ def execute_sql(sql_query):
         for row in data:
             results.append(dict(zip(columns, row)))
             
+        conn.close()
         return results, columns
     except Exception as e:
+        if conn:
+            conn.close()
         return str(e), []
 
 import time
@@ -137,10 +139,8 @@ Rules:
     messages.append({"role": "user", "content": query})
 
     headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "http://localhost:5173", # Update to match frontend
-        "X-Title": "LightChatbot"
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
     }
     
     payload = {
@@ -152,9 +152,9 @@ Rules:
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            print(f"Sending request to OpenRouter (Attempt {attempt+1}/{max_retries})...")
+            print(f"Sending request to Groq (Attempt {attempt+1}/{max_retries})...")
             response = requests.post(
-                f"{OPENROUTER_BASE_URL}/chat/completions", 
+                f"{GROQ_BASE_URL}/chat/completions", 
                 headers=headers, 
                 json=payload,
                 timeout=30 # Add timeout
