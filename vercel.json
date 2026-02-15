@@ -3,6 +3,38 @@
         {
             "source": "/api/(.*)",
             "destination": "/backend/index.py"
+        },
+        {
+            "source": "/(.*)",
+            "destination": "/frontend/$1"
+        },
+        {
+            "source": "/",
+            "destination": "/frontend/index.html"
+        }
+    ],
+    "builds": [
+        {
+            "src": "backend/index.py",
+            "use": "@vercel/python"
+        },
+        {
+            "src": "frontend/package.json",
+            "use": "@vercel/static-build",
+            "config": {
+                "distDir": "dist"
+            }
+        }
+    ],
+    "headers": [
+        {
+            "source": "/frontend/(.*)",
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "public, max-age=31536000, immutable"
+                }
+            ]
         }
     ]
 }

@@ -34,7 +34,7 @@ const ChatInterface = () => {
                 content: msg.content
             }));
 
-            const response = await axios.post('http://localhost:8000/api/chat', {
+            const response = await axios.post('/api/chat', {
                 message: userMessage.content,
                 history: history
             });
