@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()
 
 from contextlib import asynccontextmanager
-from seed_data import seed_database
+
 
 import logging
 import sys
@@ -25,14 +25,96 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
+
+import random
+from datetime import datetime, timedelta
+
+def seed_database_internal(conn):
+    cursor = conn.cursor()
+    
+    # Tables
+    cursor.execute(""" CREATE TABLE IF NOT EXISTS customers (
+                        id integer PRIMARY KEY,
+                        name text NOT NULL,
+                        email text,
+                        city text,
+                        signup_date text
+                    ); """)
+
+    cursor.execute(""" CREATE TABLE IF NOT EXISTS products (
+                        id integer PRIMARY KEY,
+                        name text NOT NULL,
+                        category text,
+                        price real
+                    ); """)
+
+    cursor.execute(""" CREATE TABLE IF NOT EXISTS orders (
+                        id integer PRIMARY KEY,
+                        customer_id integer NOT NULL,
+                        order_date text,
+                        total_amount real,
+                        FOREIGN KEY (customer_id) REFERENCES customers (id)
+                    ); """)
+
+    cursor.execute(""" CREATE TABLE IF NOT EXISTS order_items (
+                        id integer PRIMARY KEY,
+                        order_id integer NOT NULL,
+                        product_id integer NOT NULL,
+                        quantity integer,
+                        price_at_purchase real,
+                        FOREIGN KEY (order_id) REFERENCES orders (id),
+                        FOREIGN KEY (product_id) REFERENCES products (id)
+                    ); """)
+
+    # Seed Data (Check if exists first)
+    cursor.execute("SELECT count(*) FROM customers")
+    if cursor.fetchone()[0] > 0:
+        return
+
+    cities = ["New York", "Los Angeles", "Chicago", "Houston", "Phoenix"]
+    for i in range(1, 101):
+        name = f"Customer {i}"
+        email = f"customer{i}@example.com"
+        city = random.choice(cities)
+        date = (datetime.now() - timedelta(days=random.randint(0, 365))).strftime("%Y-%m-%d")
+        cursor.execute("INSERT INTO customers (name, email, city, signup_date) VALUES (?, ?, ?, ?)", (name, email, city, date))
+
+    categories = ["Electronics", "Clothing", "Home", "Books"]
+    for i in range(1, 21):
+        name = f"Product {i}"
+        category = random.choice(categories)
+        price = round(random.uniform(10.0, 500.0), 2)
+        cursor.execute("INSERT INTO products (name, category, price) VALUES (?, ?, ?)", (name, category, price))
+
+    for i in range(1, 201):
+        customer_id = random.randint(1, 100)
+        order_date = (datetime.now() - timedelta(days=random.randint(0, 365))).strftime("%Y-%m-%d")
+        cursor.execute("INSERT INTO orders (customer_id, order_date, total_amount) VALUES (?, ?, ?)", (customer_id, order_date, 0))
+        order_id = cursor.lastrowid
+
+        total_amount = 0
+        num_items = random.randint(1, 5)
+        for _ in range(num_items):
+            product_id = random.randint(1, 20)
+            cursor.execute("SELECT price FROM products WHERE id = ?", (product_id,))
+            price = cursor.fetchone()[0]
+            quantity = random.randint(1, 3)
+            cursor.execute("INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase) VALUES (?, ?, ?, ?)", (order_id, product_id, quantity, price))
+            total_amount += price * quantity
+        
+        cursor.execute("UPDATE orders SET total_amount = ? WHERE id = ?", (total_amount, order_id))
+
+    conn.commit()
+
 def get_db_connection():
     try:
         conn = sqlite3.connect(":memory:", check_same_thread=False)
-        seed_database(conn)
+        seed_database_internal(conn)
         return conn
     except Exception as e:
         logger.error(f"Failed to create DB connection: {e}")
         return None
+
 
 app = FastAPI()
 
