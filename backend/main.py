@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import sqlite3
-import pandas as pd
+
 import os
 from dotenv import load_dotenv
 from typing import List, Optional, Dict, Any
@@ -14,6 +14,13 @@ load_dotenv()
 from contextlib import asynccontextmanager
 from seed_data import seed_database
 
+import logging
+import sys
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+logger = logging.getLogger(__name__)
+
 # Global database connection
 db_conn = None
 
@@ -21,12 +28,21 @@ db_conn = None
 async def lifespan(app: FastAPI):
     # Startup: Create in-memory DB and seed it
     global db_conn
-    db_conn = sqlite3.connect(":memory:", check_same_thread=False)
-    seed_database(db_conn)
+    try:
+        logger.info("Starting up: Creating in-memory database...")
+        db_conn = sqlite3.connect(":memory:", check_same_thread=False)
+        seed_database(db_conn)
+        logger.info("Database seeded successfully.")
+    except Exception as e:
+        logger.error(f"Failed to seed database: {e}")
+        # We don't crash here so the health check can still pass for debugging
+    
     yield
+    
     # Shutdown
     if db_conn:
         db_conn.close()
+        logger.info("Database connection closed.")
 
 app = FastAPI(lifespan=lifespan)
 
@@ -39,6 +55,9 @@ app.add_middleware(
 )
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+if not OPENROUTER_API_KEY:
+    logger.warning("OPENROUTER_API_KEY is not set!")
+
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "z-ai/glm-4.5-air:free")
 
@@ -66,19 +85,31 @@ def get_db_schema():
         
     return schema
 
+
+from datetime import datetime
+
 def execute_sql(sql_query):
     try:
-        # Using pandas for easy dataframe manipulation
-        df = pd.read_sql_query(sql_query, db_conn)
-        return df
+        cursor = db_conn.cursor()
+        cursor.execute(sql_query)
+        columns = [description[0] for description in cursor.description]
+        data = cursor.fetchall()
+        
+        # Convert to list of dicts
+        results = []
+        for row in data:
+            results.append(dict(zip(columns, row)))
+            
+        return results, columns
     except Exception as e:
-        return str(e)
-
+        return str(e), []
 
 import time
 
 def generate_sql_and_answer(query: str, history: List[Dict[str, str]]):
     schema = get_db_schema()
+    
+    current_date = datetime.now().strftime('%Y-%m-%d')
     
     system_prompt = f"""You are an expert data analyst. You have access to a SQLite database with the following schema:
 
@@ -94,7 +125,7 @@ Format:
 
 Rules:
 1. Use only SQLite syntax.
-2. The current date is {pd.Timestamp.now().strftime('%Y-%m-%d')}.
+2. The current date is {current_date}.
 3. Return ONLY the JSON object. Do not wrap it in markdown code blocks.
 """
 
@@ -176,19 +207,23 @@ async def chat(request: ChatRequest):
     viz_type = "table"
 
     if sql_query:
-        result = execute_sql(sql_query)
-        if isinstance(result, pd.DataFrame):
+        result, columns = execute_sql(sql_query)
+        if isinstance(result, list):
             # Limit results for frontend performance
             if len(result) > 100:
-                result = result.head(100)
+                result = result[:100]
             
-            data_list = result.to_dict(orient="records")
+            data_list = result
             
             # Simple heuristic for visualization
             if len(data_list) > 0:
-                if len(result.columns) == 2 and (pd.api.types.is_numeric_dtype(result.iloc[:, 1])):
-                   viz_type = "bar"
-                elif "date" in result.columns[0].lower() or "time" in result.columns[0].lower():
+                 # Check if we have 2 columns and the second one is likely numeric
+                if len(columns) == 2:
+                     first_val = data_list[0][columns[1]]
+                     if isinstance(first_val, (int, float)):
+                        viz_type = "bar"
+                     
+                if "date" in columns[0].lower() or "time" in columns[0].lower():
                    viz_type = "line"
         else:
             explanation += f"\nError executing SQL: {result}"
