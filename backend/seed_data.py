@@ -18,44 +18,52 @@ def create_table(conn, create_table_sql):
     except sqlite3.Error as e:
         print(e)
 
+
+sql_create_customers_table = """ CREATE TABLE IF NOT EXISTS customers (
+                                    id integer PRIMARY KEY,
+                                    name text NOT NULL,
+                                    email text,
+                                    city text,
+                                    signup_date text
+                                ); """
+
+sql_create_products_table = """ CREATE TABLE IF NOT EXISTS products (
+                                    id integer PRIMARY KEY,
+                                    name text NOT NULL,
+                                    category text,
+                                    price real
+                                ); """
+
+sql_create_orders_table = """ CREATE TABLE IF NOT EXISTS orders (
+                                    id integer PRIMARY KEY,
+                                    customer_id integer NOT NULL,
+                                    order_date text,
+                                    total_amount real,
+                                    FOREIGN KEY (customer_id) REFERENCES customers (id)
+                                ); """
+
+sql_create_order_items_table = """ CREATE TABLE IF NOT EXISTS order_items (
+                                    id integer PRIMARY KEY,
+                                    order_id integer NOT NULL,
+                                    product_id integer NOT NULL,
+                                    quantity integer,
+                                    price_at_purchase real,
+                                    FOREIGN KEY (order_id) REFERENCES orders (id),
+                                    FOREIGN KEY (product_id) REFERENCES products (id)
+                                ); """
+
 def main():
     database = "retail.db"
-
-    sql_create_customers_table = """ CREATE TABLE IF NOT EXISTS customers (
-                                        id integer PRIMARY KEY,
-                                        name text NOT NULL,
-                                        email text,
-                                        city text,
-                                        signup_date text
-                                    ); """
-
-    sql_create_products_table = """ CREATE TABLE IF NOT EXISTS products (
-                                        id integer PRIMARY KEY,
-                                        name text NOT NULL,
-                                        category text,
-                                        price real
-                                    ); """
-
-    sql_create_orders_table = """ CREATE TABLE IF NOT EXISTS orders (
-                                        id integer PRIMARY KEY,
-                                        customer_id integer NOT NULL,
-                                        order_date text,
-                                        total_amount real,
-                                        FOREIGN KEY (customer_id) REFERENCES customers (id)
-                                    ); """
-
-    sql_create_order_items_table = """ CREATE TABLE IF NOT EXISTS order_items (
-                                        id integer PRIMARY KEY,
-                                        order_id integer NOT NULL,
-                                        product_id integer NOT NULL,
-                                        quantity integer,
-                                        price_at_purchase real,
-                                        FOREIGN KEY (order_id) REFERENCES orders (id),
-                                        FOREIGN KEY (product_id) REFERENCES products (id)
-                                    ); """
-
     conn = create_connection(database)
+    if conn:
+        seed_database(conn)
+        conn.close()
 
+if __name__ == '__main__':
+    main()
+
+
+def seed_database(conn):
     if conn is not None:
         create_table(conn, sql_create_customers_table)
         create_table(conn, sql_create_products_table)
@@ -64,6 +72,11 @@ def main():
 
         # Seed Data
         cursor = conn.cursor()
+
+        # Check if data already exists to avoid duplicate seeding (optional check)
+        cursor.execute("SELECT count(*) FROM customers")
+        if cursor.fetchone()[0] > 0:
+            return
 
         # Customers
         cities = ["New York", "Los Angeles", "Chicago", "Houston", "Phoenix"]
@@ -104,9 +117,7 @@ def main():
 
         conn.commit()
         print("Database seeded successfully.")
-        conn.close()
-    else:
-        print("Error! cannot create the database connection.")
+
 
 if __name__ == '__main__':
     main()

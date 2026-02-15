@@ -11,7 +11,24 @@ from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
-app = FastAPI()
+from contextlib import asynccontextmanager
+from seed_data import seed_database
+
+# Global database connection
+db_conn = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Create in-memory DB and seed it
+    global db_conn
+    db_conn = sqlite3.connect(":memory:", check_same_thread=False)
+    seed_database(db_conn)
+    yield
+    # Shutdown
+    if db_conn:
+        db_conn.close()
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,11 +38,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DB_PATH = "retail.db"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "z-ai/glm-4.5-air:free") # Ensuring defaults
-
+MODEL_NAME = os.getenv("MODEL_NAME", "z-ai/glm-4.5-air:free")
 
 class ChatRequest(BaseModel):
     message: str
@@ -38,8 +53,7 @@ class ChatResponse(BaseModel):
     visualization_type: Optional[str] = None
 
 def get_db_schema():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    cursor = db_conn.cursor()
     
     schema = ""
     tables = ["customers", "products", "orders", "order_items"]
@@ -50,15 +64,12 @@ def get_db_schema():
         column_names = [col[1] for col in columns]
         schema += f"Table: {table}\nColumns: {', '.join(column_names)}\n\n"
         
-    conn.close()
     return schema
 
 def execute_sql(sql_query):
     try:
-        conn = sqlite3.connect(DB_PATH)
         # Using pandas for easy dataframe manipulation
-        df = pd.read_sql_query(sql_query, conn)
-        conn.close()
+        df = pd.read_sql_query(sql_query, db_conn)
         return df
     except Exception as e:
         return str(e)
