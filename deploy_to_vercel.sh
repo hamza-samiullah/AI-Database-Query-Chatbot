@@ -19,6 +19,6 @@ vercel --prod
 
 echo "✅ Deployment initiated!"
 echo "NOTE: Remember to set your Environment Variables in the Vercel Dashboard:"
-echo "      - OPENROUTER_API_KEY"
-echo "      - OPENROUTER_BASE_URL"
-echo "      - MODEL_NAME"
+echo "      - GROQ_API_KEY"
+echo "      - GROQ_BASE_URL (Optional)"
+echo "      - MODEL_NAME (Default: llama-3.3-70b-versatile)"

@@ -1,10 +1,11 @@
 # Light AI Chatbot
 
-A lightweight conversational AI chatbot that allows users to query a local SQLite database using natural language. Built with FastAPI, React, and OpenRouter (GLM-4.5).
+A lightweight conversational AI chatbot that allows users to query a local SQLite database using natural language. Built with FastAPI, React, and Groq (Llama 3.3).
 
 ## Prerequisites
 - Node.js (v18+)
 - Python (v3.10+)
+- Groq API Key
 
 ## Setup & Running
 
@@ -18,11 +19,16 @@ A lightweight conversational AI chatbot that allows users to query a local SQLit
  Create a virtual environment and install dependencies:
  ```bash
  python -m venv venv
- source venv/bin/activate  # On Windows: venv\Scripts\activate
+ source venv/bin/activate  # On Windows: venv\\Scripts\\activate
  pip install -r requirements.txt
  ```
 
- Seed the database (creates `retail.db`):
+ Configure `.env`:
+ ```bash
+ GROQ_API_KEY=your_groq_api_key
+ ```
+
+ Seed the database (optional, happens on startup):
  ```bash
  python seed_data.py
  ```
@@ -53,4 +59,4 @@ A lightweight conversational AI chatbot that allows users to query a local SQLit
 
 ## Usage
 1. Type a question in the chat, e.g., "Show me top 5 customers" or "Total sales by category".
-2. The AI will generate a SQL query, execute it, and display the results in a table or chart.
+2. The AI will generate a SQL query using **Llama 3.3**, execute it, and display the results in a table or chart.
